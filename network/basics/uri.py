@@ -114,6 +114,14 @@ options:
         request. Can also be comma separated list of status codes.
     required: false
     default: 200
+  changed_code:
+    description:
+      - A valid, numeric, HTTP status code that signifies a "changed" status
+        effected by the request. Can also be comma separated list of status
+        codes.
+    required: false
+    default: 200
+    version_added: "2.3"
   timeout:
     description:
       - The socket level timeout in seconds
@@ -175,6 +183,24 @@ EXAMPLES = '''
     force_basic_auth: yes
     status_code: 201
     body_format: json
+
+# Create an SSO Graylog user via API, which returns 400 for a user that is
+# existent and 201 if newly created
+- uri:
+    url: https://graylog.example.com:12900
+    method: POST
+    user: admin
+    password: '{{ graylog_root_password }}'
+    body:
+      username: maxm
+      email: muster@example.com
+      full_name: 'Max Mustermann'
+      permissions: ['*']
+      roles: ['Admin']
+      password: null
+    body_format: json
+    status_code: [200, 201, 400]
+    changed_code: [201]
 
 # Login to a form based webpage, then use the returned cookie to
 # access the app in later tasks
@@ -364,6 +390,7 @@ def main():
         creates = dict(required=False, default=None, type='path'),
         removes = dict(required=False, default=None, type='path'),
         status_code = dict(required=False, default=[200], type='list'),
+        changed_code = dict(required=False, default=[200], type='list'),
         timeout = dict(required=False, default=30, type='int'),
         headers = dict(required=False, type='dict', default={})
     ))
@@ -383,6 +410,7 @@ def main():
     creates = module.params['creates']
     removes = module.params['removes']
     status_code = [int(x) for x in list(module.params['status_code'])]
+    changed_code = [int(x) for x in list(module.params['changed_code'])]
     socket_timeout = module.params['timeout']
 
     dict_headers = module.params['headers']
@@ -434,7 +462,10 @@ def main():
             changed = module.set_fs_attributes_if_different(file_args, changed)
         resp['path'] = dest
     else:
-        changed = False
+        if resp['status'] in changed_code:
+            changed = True
+        else:
+            changed = False
 
     # Transmogrify the headers, replacing '-' with '_', since variables dont
     # work with dashes.
